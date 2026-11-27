@@ -460,7 +460,7 @@ components:
         iva: { type: integer, enum: [4, 10, 21], example: 21 }
         stockActual: { type: integer, example: 6 }
         stockMinimo: { type: integer, example: 5 }
-        ubicacion: { type: string, example: A-02 }
+        ubicacion: { type: string, example: A-03 }
         activo: { type: boolean, example: true }
         bajoMinimo: { type: boolean, example: false, description: 'true si stockActual < stockMinimo' }
 
@@ -476,7 +476,7 @@ components:
         precioVenta: { type: number, format: double, minimum: 0, exclusiveMinimum: true, example: 149.90 }
         iva: { type: integer, enum: [4, 10, 21], example: 21 }
         stockMinimo: { type: integer, minimum: 0, example: 5 }
-        ubicacion: { type: string, maxLength: 30, example: A-02 }
+        ubicacion: { type: string, maxLength: 30, example: A-03 }
 
     TipoMovimiento:
       type: string
