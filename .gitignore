@@ -1,0 +1,33 @@
+# Secretos
+.env
+
+# Java / Maven
+target/
+*.class
+*.log
+.mvn/wrapper/maven-wrapper.jar
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+**/android/local.properties
+**/android/.gradle/
+**/ios/Pods/
+
+# Sistema
+.DS_Store
+Thumbs.db
