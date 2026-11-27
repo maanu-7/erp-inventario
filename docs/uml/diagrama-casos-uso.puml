@@ -1,0 +1,58 @@
+@startuml diagrama-casos-uso
+!pragma layout smetana
+title Grupo 2 · Inventario — Diagrama de casos de uso
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+actor "Encargado\nde almacén" as Almacen
+actor "Dirección" as Direccion
+actor "Ventas (G3)\n[I2]" as Ventas <<sistema>>
+actor "Compras (G4)\n[I4 · I8]" as Compras <<sistema>>
+
+rectangle "inventario-service" {
+  usecase "Gestionar categorías" as UC1
+  usecase "Gestionar productos\n(alta, modificación, baja lógica)" as UC2
+  usecase "Buscar productos\n(nombre, SKU, categoría)" as UC3
+  usecase "Consultar historial\nde movimientos" as UC7
+  usecase "Consultar valoración\ndel inventario" as UC9
+  usecase "Consultar estadísticas" as UC11
+
+  usecase "Consultar producto" as UC4
+  usecase "Registrar movimiento\nde stock" as UC5
+  usecase "Registrar SALIDA" as UC5b
+  usecase "Registrar ENTRADA" as UC5a
+  usecase "Registrar AJUSTE" as UC5c
+  usecase "Comprobar stock\nsuficiente" as UC6
+  usecase "Consultar productos\nbajo mínimo" as UC8
+  usecase "Consultar proveedores\nde un producto" as UC10
+}
+
+' Actores internos (izquierda)
+Almacen -- UC1
+Almacen -- UC2
+Almacen -- UC3
+Almacen --- UC4
+Almacen -- UC5
+Almacen -- UC7
+Almacen --- UC8
+Almacen -- UC9
+Almacen --- UC10
+Direccion -- UC9
+Direccion -- UC11
+
+' Tipos de movimiento
+UC5 <|-- UC5a
+UC5 <|-- UC5b
+UC5 <|-- UC5c
+UC5b ..> UC6 : <<include>>
+
+' Sistemas externos (derecha)
+UC4 -- Ventas
+UC5b -- Ventas
+UC8 -- Compras
+UC5a -- Compras
+UC10 -- Compras
+
+@enduml

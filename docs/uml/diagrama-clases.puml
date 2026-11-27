@@ -1,0 +1,65 @@
+@startuml diagrama-clases
+!pragma layout smetana
+title Grupo 2 · Inventario — Diagrama de clases del dominio
+
+skinparam classAttributeIconSize 10
+skinparam shadowing false
+hide empty members
+
+class Categoria {
+  - id : Long
+  - nombre : String {unique}
+  - descripcion : String
+}
+
+class Producto {
+  - id : Long
+  - sku : String {unique}
+  - nombre : String
+  - descripcion : String
+  - precioCoste : BigDecimal
+  - precioVenta : BigDecimal
+  - iva : int  // 4, 10, 21
+  - stockActual : int
+  - stockMinimo : int
+  - ubicacion : String
+  - activo : boolean
+  + estaBajoMinimo() : boolean
+}
+
+class MovimientoStock {
+  - id : Long
+  - tipo : TipoMovimiento
+  - origen : OrigenMovimiento
+  - cantidad : int
+  - fecha : LocalDateTime
+  - motivo : String
+  - referenciaExterna : String  // p.ej. PV-2026-0007
+  - stockResultante : int
+}
+
+enum TipoMovimiento {
+  ENTRADA
+  SALIDA
+  AJUSTE
+}
+
+enum OrigenMovimiento {
+  VENTA
+  COMPRA
+  MANUAL
+}
+
+Categoria "1" o-- "0..*" Producto
+Producto "1" *-- "0..*" MovimientoStock
+MovimientoStock ..> TipoMovimiento
+MovimientoStock ..> OrigenMovimiento
+
+note right of MovimientoStock
+  Regla: una SALIDA nunca puede
+  dejar stockActual < 0 (HTTP 409).
+  Cada movimiento actualiza el stock
+  en la misma transacción.
+end note
+
+@enduml
