@@ -1,0 +1,596 @@
+openapi: 3.0.3
+info:
+  title: ERP Meseta · inventario-service
+  version: 1.0.0
+  description: |
+    API REST del módulo de **Inventario** (Grupo 2) del ERP «Meseta».
+    Gestiona categorías, productos y movimientos de stock.
+
+    **Integraciones**
+    - **I2** (Ventas → Inventario): `GET /api/productos/{id}` y `POST /api/movimientos` (SALIDA al servir un pedido).
+    - **I4** (Compras → Inventario): `GET /api/productos/bajo-minimo` y `POST /api/movimientos` (ENTRADA al recibir un pedido de compra).
+    - **I8** (Inventario → Compras): `GET /api/productos/{id}/proveedores` consulta `GET /api/catalogo?productoId=` de compras-service.
+
+    **Convenciones**
+    - JSON en camelCase, identificadores `Long`, fechas ISO-8601, importes con 2 decimales.
+    - El stock **solo cambia mediante movimientos**: no se puede modificar `stockActual` con PUT.
+    - Todos los errores usan el esquema `Error`.
+servers:
+  - url: http://localhost:8082
+    description: Local / Docker (puerto publicado)
+  - url: http://inventario-service:8082
+    description: Red interna de Docker (llamadas entre microservicios)
+
+tags:
+  - name: Categorías
+  - name: Productos
+  - name: Movimientos
+  - name: Informes
+  - name: Estadísticas
+
+paths:
+  /api/categorias:
+    get:
+      tags: [Categorías]
+      summary: Listar categorías
+      operationId: listarCategorias
+      responses:
+        '200':
+          description: Listado de categorías
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Categoria' }
+    post:
+      tags: [Categorías]
+      summary: Crear categoría
+      operationId: crearCategoria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoriaRequest' }
+      responses:
+        '201':
+          description: Categoría creada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Categoria' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/categorias/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Categorías]
+      summary: Detalle de una categoría
+      operationId: obtenerCategoria
+      responses:
+        '200':
+          description: Categoría
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Categoria' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Categorías]
+      summary: Modificar categoría
+      operationId: modificarCategoria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoriaRequest' }
+      responses:
+        '200':
+          description: Categoría modificada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Categoria' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Categorías]
+      summary: Borrar categoría
+      description: No se puede borrar una categoría que tenga productos (409).
+      operationId: borrarCategoria
+      responses:
+        '204': { description: Categoría borrada }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/productos:
+    get:
+      tags: [Productos]
+      summary: Listar productos con búsqueda y filtros
+      operationId: listarProductos
+      parameters:
+        - name: q
+          in: query
+          description: Texto a buscar en el nombre o el SKU (sin distinguir mayúsculas).
+          schema: { type: string }
+        - name: categoriaId
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: activo
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Listado de productos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Producto' }
+    post:
+      tags: [Productos]
+      summary: Crear producto
+      description: El producto se crea con `stockActual = 0`. Para darle stock inicial se registra un movimiento de ENTRADA o AJUSTE.
+      operationId: crearProducto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductoRequest' }
+      responses:
+        '201':
+          description: Producto creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Producto' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: La categoría indicada no existe
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Ya existe un producto con ese SKU
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/productos/bajo-minimo:
+    get:
+      tags: [Productos]
+      summary: Productos con stock por debajo del mínimo (I4)
+      description: |
+        Devuelve los productos **activos** con `stockActual < stockMinimo`.
+        Lo consume Compras para la propuesta de reposición (cantidad sugerida = 2 × stockMinimo − stockActual, la calcula Compras).
+      operationId: listarBajoMinimo
+      responses:
+        '200':
+          description: Productos bajo mínimo
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Producto' }
+
+  /api/productos/sku/{sku}:
+    get:
+      tags: [Productos]
+      summary: Detalle de un producto por SKU
+      operationId: obtenerProductoPorSku
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema: { type: string, example: MON-024 }
+      responses:
+        '200':
+          description: Producto
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Producto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/productos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Productos]
+      summary: Detalle de un producto (I2)
+      description: Lo consume Ventas para obtener precio de venta, IVA y stock al crear las líneas de un pedido.
+      operationId: obtenerProducto
+      responses:
+        '200':
+          description: Producto
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Producto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Productos]
+      summary: Modificar producto
+      description: Modifica los datos del producto. **No** modifica el stock (solo con movimientos).
+      operationId: modificarProducto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductoRequest' }
+      responses:
+        '200':
+          description: Producto modificado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Producto' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Productos]
+      summary: Baja lógica de un producto
+      description: Pone `activo = false`. El producto y sus movimientos se conservan.
+      operationId: bajaProducto
+      responses:
+        '204': { description: Producto dado de baja }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/productos/{id}/proveedores:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Productos]
+      summary: Proveedores de un producto (I8, consulta a Compras)
+      description: |
+        Inventario llama a `GET {COMPRAS_SERVICE_URL}/api/catalogo?productoId={id}` y devuelve el resultado.
+        Si compras-service no responde en 3 s, devuelve 503.
+        **Nota:** el esquema `ProveedorProducto` debe coincidir con el contrato de Compras (G4); revisar al congelar.
+      operationId: listarProveedoresDeProducto
+      responses:
+        '200':
+          description: Proveedores que suministran el producto
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProveedorProducto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/movimientos:
+    get:
+      tags: [Movimientos]
+      summary: Historial de movimientos con filtros
+      description: Ordenado del más reciente al más antiguo.
+      operationId: listarMovimientos
+      parameters:
+        - name: productoId
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: tipo
+          in: query
+          schema: { $ref: '#/components/schemas/TipoMovimiento' }
+        - name: desde
+          in: query
+          description: Fecha inicial incluida (ISO-8601).
+          schema: { type: string, format: date, example: '2026-11-01' }
+        - name: hasta
+          in: query
+          description: Fecha final incluida (ISO-8601).
+          schema: { type: string, format: date, example: '2026-11-30' }
+      responses:
+        '200':
+          description: Listado de movimientos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Movimiento' }
+    post:
+      tags: [Movimientos]
+      summary: Registrar un movimiento y actualizar el stock (I2, I4)
+      description: |
+        Registra una ENTRADA, SALIDA o AJUSTE y actualiza `stockActual` en la **misma transacción**.
+        - `cantidad` siempre > 0 en los tres tipos.
+        - ENTRADA y AJUSTE suman al stock; SALIDA resta.
+        - Una SALIDA nunca puede dejar el stock en negativo → 409.
+        - Para corregir un error que dejó stock de más, se registra una SALIDA con origen MANUAL.
+        - No se pueden registrar movimientos de un producto inactivo → 409.
+        - Los movimientos no se modifican ni se borran: los errores se corrigen con un AJUSTE.
+      operationId: registrarMovimiento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MovimientoRequest' }
+            examples:
+              salidaVenta:
+                summary: SALIDA al servir un pedido de venta (I2)
+                value:
+                  productoId: 2
+                  tipo: SALIDA
+                  origen: VENTA
+                  cantidad: 5
+                  motivo: Pedido de venta servido
+                  referenciaExterna: PV-2026-0007
+              entradaCompra:
+                summary: ENTRADA al recibir un pedido de compra (I4)
+                value:
+                  productoId: 2
+                  tipo: ENTRADA
+                  origen: COMPRA
+                  cantidad: 9
+                  motivo: Recepción de pedido de compra
+                  referenciaExterna: PC-2026-0003
+              ajusteManual:
+                summary: AJUSTE manual por recuento
+                value:
+                  productoId: 5
+                  tipo: AJUSTE
+                  origen: MANUAL
+                  cantidad: 3
+                  motivo: Corrección tras recuento de almacén
+      responses:
+        '201':
+          description: Movimiento registrado; incluye el stock resultante
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Movimiento' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: El producto no existe
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Stock insuficiente o producto inactivo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                timestamp: '2026-11-17T10:15:30'
+                status: 409
+                error: Conflict
+                message: 'Stock insuficiente para MON-024: disponible 2, solicitado 5'
+                path: /api/movimientos
+
+  /api/movimientos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Movimientos]
+      summary: Detalle de un movimiento
+      operationId: obtenerMovimiento
+      responses:
+        '200':
+          description: Movimiento
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Movimiento' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/inventario/valoracion:
+    get:
+      tags: [Informes]
+      summary: Valoración del inventario a precio de coste
+      description: Valor = stockActual × precioCoste de los productos activos, en total y por categoría.
+      operationId: obtenerValoracion
+      responses:
+        '200':
+          description: Valoración del inventario
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Valoracion' }
+
+  /api/estadisticas:
+    get:
+      tags: [Estadísticas]
+      summary: KPIs del módulo para el cuadro de mando (formato común)
+      description: |
+        KPIs: `numProductos`, `productosBajoMinimo`, `valorStock`.
+        Series: `movimientosPorDia` (últimos 30 días).
+      operationId: obtenerEstadisticas
+      responses:
+        '200':
+          description: Estadísticas del módulo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Estadisticas' }
+
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  responses:
+    BadRequest:
+      description: Datos de entrada no válidos
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: El recurso no existe
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Se incumple una regla de negocio
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: Un microservicio del que depende no responde
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            timestamp: '2026-11-17T10:15:30'
+            status: 503
+            error: Service Unavailable
+            message: 'El servicio de Compras no está disponible. Inténtalo más tarde.'
+            path: /api/productos/2/proveedores
+
+  schemas:
+    Categoria:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 2 }
+        nombre: { type: string, example: Periféricos }
+        descripcion: { type: string, example: Monitores, teclados, ratones y accesorios }
+        numProductos: { type: integer, example: 3, description: Número de productos de la categoría }
+
+    CategoriaRequest:
+      type: object
+      required: [nombre]
+      properties:
+        nombre: { type: string, maxLength: 80, description: Único, example: Periféricos }
+        descripcion: { type: string, maxLength: 255 }
+
+    Producto:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 2 }
+        sku: { type: string, example: MON-024 }
+        nombre: { type: string, example: Monitor 24" }
+        descripcion: { type: string, example: Monitor 24 pulgadas Full HD }
+        categoriaId: { type: integer, format: int64, example: 2 }
+        categoriaNombre: { type: string, example: Periféricos }
+        precioCoste: { type: number, format: double, example: 95.00 }
+        precioVenta: { type: number, format: double, example: 149.90 }
+        iva: { type: integer, enum: [4, 10, 21], example: 21 }
+        stockActual: { type: integer, example: 6 }
+        stockMinimo: { type: integer, example: 5 }
+        ubicacion: { type: string, example: A-02 }
+        activo: { type: boolean, example: true }
+        bajoMinimo: { type: boolean, example: false, description: 'true si stockActual < stockMinimo' }
+
+    ProductoRequest:
+      type: object
+      required: [sku, nombre, categoriaId, precioCoste, precioVenta, iva, stockMinimo]
+      properties:
+        sku: { type: string, maxLength: 30, description: Único, example: MON-024 }
+        nombre: { type: string, maxLength: 120, example: Monitor 24" }
+        descripcion: { type: string, maxLength: 500 }
+        categoriaId: { type: integer, format: int64, example: 2 }
+        precioCoste: { type: number, format: double, minimum: 0, exclusiveMinimum: true, example: 95.00 }
+        precioVenta: { type: number, format: double, minimum: 0, exclusiveMinimum: true, example: 149.90 }
+        iva: { type: integer, enum: [4, 10, 21], example: 21 }
+        stockMinimo: { type: integer, minimum: 0, example: 5 }
+        ubicacion: { type: string, maxLength: 30, example: A-02 }
+
+    TipoMovimiento:
+      type: string
+      enum: [ENTRADA, SALIDA, AJUSTE]
+
+    OrigenMovimiento:
+      type: string
+      enum: [VENTA, COMPRA, MANUAL]
+
+    MovimientoRequest:
+      type: object
+      required: [productoId, tipo, origen, cantidad]
+      properties:
+        productoId: { type: integer, format: int64, example: 2 }
+        tipo: { $ref: '#/components/schemas/TipoMovimiento' }
+        origen: { $ref: '#/components/schemas/OrigenMovimiento' }
+        cantidad:
+          type: integer
+          minimum: 1
+          example: 5
+          description: Siempre mayor que 0. ENTRADA y AJUSTE suman; SALIDA resta.
+        motivo: { type: string, maxLength: 255, example: Pedido de venta servido }
+        referenciaExterna:
+          type: string
+          maxLength: 30
+          example: PV-2026-0007
+          description: Número del documento que origina el movimiento (PV-… en ventas, PC-… en compras).
+
+    Movimiento:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 15 }
+        productoId: { type: integer, format: int64, example: 2 }
+        productoSku: { type: string, example: MON-024 }
+        productoNombre: { type: string, example: Monitor 24" }
+        tipo: { $ref: '#/components/schemas/TipoMovimiento' }
+        origen: { $ref: '#/components/schemas/OrigenMovimiento' }
+        cantidad: { type: integer, example: 5 }
+        fecha: { type: string, format: date-time, example: '2026-11-17T10:30:00' }
+        motivo: { type: string, example: Pedido de venta servido }
+        referenciaExterna: { type: string, example: PV-2026-0007 }
+        stockResultante: { type: integer, example: 1 }
+
+    ProveedorProducto:
+      type: object
+      description: Formato devuelto por compras-service en `GET /api/catalogo?productoId=` (pendiente de confirmar con G4).
+      properties:
+        proveedorId: { type: integer, format: int64, example: 1 }
+        proveedorNombre: { type: string, example: Distrinfo Castilla }
+        productoId: { type: integer, format: int64, example: 2 }
+        precioCompra: { type: number, format: double, example: 92.50 }
+        plazoEntregaDias: { type: integer, example: 3 }
+        preferente: { type: boolean, example: true }
+
+    Valoracion:
+      type: object
+      properties:
+        generadoEn: { type: string, format: date-time, example: '2026-11-17T10:15:30' }
+        valorTotal: { type: number, format: double, example: 8450.00 }
+        unidadesTotales: { type: integer, example: 301 }
+        porCategoria:
+          type: array
+          items:
+            type: object
+            properties:
+              categoriaId: { type: integer, format: int64, example: 1 }
+              categoriaNombre: { type: string, example: Informática }
+              unidades: { type: integer, example: 12 }
+              valor: { type: number, format: double, example: 6600.00 }
+
+    Estadisticas:
+      type: object
+      description: Formato común de estadísticas de todos los módulos (apartado 4.3 de la guía).
+      properties:
+        modulo: { type: string, example: inventario }
+        generadoEn: { type: string, format: date-time, example: '2026-11-17T10:15:30' }
+        kpis:
+          type: array
+          items: { $ref: '#/components/schemas/Kpi' }
+          example:
+            - { clave: numProductos, etiqueta: Productos activos, valor: 6, unidad: '' }
+            - { clave: productosBajoMinimo, etiqueta: Productos bajo mínimo, valor: 1, unidad: '' }
+            - { clave: valorStock, etiqueta: Valor del stock, valor: 8450.00, unidad: '€' }
+        series:
+          type: array
+          items: { $ref: '#/components/schemas/Serie' }
+
+    Kpi:
+      type: object
+      properties:
+        clave: { type: string }
+        etiqueta: { type: string }
+        valor: { type: number }
+        unidad: { type: string }
+
+    Serie:
+      type: object
+      properties:
+        nombre: { type: string, example: movimientosPorDia }
+        etiqueta: { type: string, example: Movimientos por día }
+        puntos:
+          type: array
+          items:
+            type: object
+            properties:
+              etiqueta: { type: string, example: '2026-11-17' }
+              valor: { type: number, example: 4 }
+
+    Error:
+      type: object
+      description: Formato común de error de todos los microservicios.
+      properties:
+        timestamp: { type: string, format: date-time, example: '2026-11-17T10:15:30' }
+        status: { type: integer, example: 409 }
+        error: { type: string, example: Conflict }
+        message: { type: string, example: 'Stock insuficiente para MON-024: disponible 2, solicitado 5' }
+        path: { type: string, example: /api/movimientos }
