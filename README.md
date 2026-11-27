@@ -13,8 +13,8 @@ movimientos de stock (entrada / salida / ajuste), alertas de bajo mínimo y valo
 
 | Miembro | Paquetes | Rol |
 |---|---|---|
-| _Nombre 1_ | A (categorías y productos) + C (bajo mínimo, valoración, I8) | Coordinación · Integración |
-| _Nombre 2_ | B (movimientos de stock) + D (estadísticas, CORS, Docker) | Calidad y documentación · DevOps |
+| [@maanu-7](https://github.com/maanu-7) | A (categorías y productos) + C (bajo mínimo, valoración, I8) | Coordinación · Integración |
+| [@Pacitochocolatero](https://github.com/Pacitochocolatero) | B (movimientos de stock) + D (estadísticas, CORS, Docker) | Calidad y documentación · DevOps |
 
 ## Integraciones
 
